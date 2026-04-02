@@ -1,11 +1,16 @@
 package cn.hit.edu.train
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,9 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.URLEncoder
 
-// 1. 数据模型
 data class WeatherData(val temp: String, val weather: String)
 
 class MainActivity : ComponentActivity() {
@@ -32,18 +35,179 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             TrainTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    WeatherScreen(modifier = Modifier.padding(innerPadding))
-                }
+                MainContainer()
+            }
+        }
+    }
+}
+
+@Composable
+fun MainContainer() {
+    var selectedIndex by remember { mutableStateOf(0) }
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar(containerColor = Color.White) {
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Home, contentDescription = "首页") },
+                    label = { Text("首页") },
+                    selected = selectedIndex == 0,
+                    onClick = { selectedIndex = 0 }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Person, contentDescription = "个人") },
+                    label = { Text("个人") },
+                    selected = selectedIndex == 1,
+                    onClick = { selectedIndex = 1 }
+                )
+            }
+        }
+    ) { innerPadding ->
+        Box(modifier = Modifier.padding(innerPadding)) {
+            when (selectedIndex) {
+                0 -> HomeScreen()
+                1 -> ProfileScreen()
             }
         }
     }
 }
 
 /**
- * 核心联网逻辑
- * 流程：输入城市名 -> 搜索城市ID -> 根据ID查天气
+ * 首页：支持最近 5 个城市历史记录的下拉搜索框
  */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen() {
+    val scope = rememberCoroutineScope()
+    var temperature by remember { mutableStateOf("--") }
+    var weatherText by remember { mutableStateOf("等待查询") }
+    var inputText by remember { mutableStateOf("") }
+
+    // 存储最近 5 个城市的列表
+    var historyCities by remember { mutableStateOf(listOf("北京", "上海", "哈尔滨")) }
+    var isExpanded by remember { mutableStateOf(false) } // 控制下拉菜单展开状态
+
+    // 抽取查询逻辑：搜索并更新历史记录
+    val performSearch: (String) -> Unit = { city ->
+        if (city.isNotBlank()) {
+            scope.launch {
+                val result = fetchWeather(city)
+                temperature = result.temp
+                weatherText = result.weather
+
+                // 更新历史记录逻辑：去重 -> 置顶 -> 截取前5个
+                val newList = (listOf(city) + historyCities)
+                    .distinct()
+                    .take(5)
+                historyCities = newList
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        CenterAlignedTopAppBar(title = { Text("界面标题", fontSize = 18.sp) })
+
+        Column(modifier = Modifier.padding(16.dp)) {
+
+            // 搜索框
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                label = { Text("输入城市名搜索") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                trailingIcon = {
+                    IconButton(onClick = { performSearch(inputText) }) {
+                        Icon(Icons.Default.Search, contentDescription = "搜索")
+                    }
+                }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 最近城市下拉框
+            ExposedDropdownMenuBox(
+                expanded = isExpanded,
+                onExpandedChange = { isExpanded = !isExpanded },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                OutlinedButton(
+                    onClick = { },
+                    modifier = Modifier.menuAnchor(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text("最近查询 ▼")
+                }
+
+                ExposedDropdownMenu(
+                    expanded = isExpanded,
+                    onDismissRequest = { isExpanded = false }
+                ) {
+                    historyCities.forEach { city ->
+                        DropdownMenuItem(
+                            text = { Text(city) },
+                            onClick = {
+                                inputText = city
+                                isExpanded = false
+                                performSearch(city) // 点击历史城市直接查询
+                            }
+                        )
+                    }
+                    if (historyCities.isEmpty()) {
+                        DropdownMenuItem(text = { Text("暂无记录", color = Color.Gray) }, onClick = {})
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 展示面板
+            Card(
+                modifier = Modifier.fillMaxWidth().height(180.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("展示面板", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(60.dp).background(Color(0xFFE3F2FD), RoundedCornerShape(30.dp)), contentAlignment = Alignment.Center) {
+                            Text("☀️", fontSize = 30.sp)
+                        }
+                        Spacer(modifier = Modifier.width(20.dp))
+                        Column {
+                            Text(text = "天气：$weatherText", fontSize = 18.sp)
+                            Text(text = "温度：$temperature", fontSize = 18.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProfileScreen() {
+    Column(modifier = Modifier.fillMaxSize()) {
+        CenterAlignedTopAppBar(title = { Text("界面标题", fontSize = 18.sp) })
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(80.dp).background(Color.LightGray, RoundedCornerShape(40.dp)))
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Box(modifier = Modifier.width(150.dp).height(2.dp).background(Color.LightGray))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(modifier = Modifier.width(100.dp).height(2.dp).background(Color.LightGray))
+                }
+            }
+            Spacer(modifier = Modifier.height(30.dp))
+            Card(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.7f), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF9F9F9))) {}
+        }
+    }
+}
+
 suspend fun fetchWeather(cityName: String): WeatherData {
     return withContext(Dispatchers.IO) {
         val client = OkHttpClient()
@@ -52,123 +216,19 @@ suspend fun fetchWeather(cityName: String): WeatherData {
 
         try {
             val encodedCity = java.net.URLEncoder.encode(cityName, "UTF-8")
-
-            // 第一步：搜索城市 ID (GeoAPI)
             val geoUrl = "https://$my_token/geo/v2/city/lookup?location=$encodedCity&key=$myKey"
-            val geoRequest = Request.Builder().url(geoUrl).build()
-            val geoResponse = client.newCall(geoRequest).execute().body?.string() ?: ""
-
-            // 【改动 1】：增加空判断。防止 geoResponse 为空字符串时解析崩溃
-            if (geoResponse.isBlank()) return@withContext WeatherData("X", "服务器无响应")
+            val geoResponse = client.newCall(Request.Builder().url(geoUrl).build()).execute().body?.string() ?: ""
 
             val geoJson = JsonParser.parseString(geoResponse).asJsonObject
-            val code = geoJson.get("code").asString
+            val locationId = geoJson.getAsJsonArray("location").get(0).asJsonObject.get("id").asString
 
-            if (code != "200") {
-                return@withContext WeatherData("N/A", "城市搜索失败: $code")
-            }
-
-            // 【改动 2】：根据文档，校验 location 数组是否存在且不为空
-            if (!geoJson.has("location") || geoJson.get("location").isJsonNull) {
-                return@withContext WeatherData("N/A", "数据格式异常")
-            }
-            val locationArray = geoJson.getAsJsonArray("location")
-            if (locationArray.size() == 0) {
-                return@withContext WeatherData("N/A", "未找到该城市")
-            }
-
-            // 【改动 3】：明确提取 location.id（对应文档 location.id 字段）
-            val locationId = locationArray.get(0).asJsonObject.get("id").asString
-
-            // 第二步：查询实时天气 (WeatherAPI)
             val weatherUrl = "https://$my_token/v7/weather/now?location=$locationId&key=$myKey"
-            val weatherRequest = Request.Builder().url(weatherUrl).build()
-            val weatherResponse = client.newCall(weatherRequest).execute().body?.string() ?: ""
+            val weatherResponse = client.newCall(Request.Builder().url(weatherUrl).build()).execute().body?.string() ?: ""
+            val now = JsonParser.parseString(weatherResponse).asJsonObject.getAsJsonObject("now")
 
-            if (weatherResponse.isBlank()) return@withContext WeatherData("X", "天气数据空")
-
-            val weatherJson = JsonParser.parseString(weatherResponse).asJsonObject
-
-            // 【改动 4】：严谨解析 "now" 对象（对应文档 now 节点）
-            if (weatherJson.get("code").asString == "200") {
-                // 检查 now 节点是否存在，防止出现截图中的 "Not a JSON Object: null"
-                if (weatherJson.has("now") && !weatherJson.get("now").isJsonNull) {
-                    val now = weatherJson.getAsJsonObject("now")
-
-                    // 【改动 5】：严格对应文档字段名提取数据
-                    // now.temp: 温度；now.text: 天气状况文字描述
-                    val tempValue = now.get("temp").asString
-                    val textValue = now.get("text").asString
-
-                    WeatherData("$tempValue°", textValue)
-                } else {
-                    WeatherData("?", "缺失now数据")
-                }
-            } else {
-                WeatherData("!", "错误码:${weatherJson.get("code").asString}")
-            }
+            WeatherData(now.get("temp").asString + "°C", now.get("text").asString)
         } catch (e: Exception) {
-            Log.e("WeatherApp", "联网失败", e)
-            // 【改动 6】：优化错误捕获提示，防止抛出原始 NullPointerException
-            WeatherData("X", "连接失败: ${e.localizedMessage ?: "未知错误"}")
-        }
-    }
-}
-
-@Composable
-fun WeatherScreen(modifier: Modifier = Modifier) {
-    var displayCity by remember { mutableStateOf("未查询") }
-    var temperature by remember { mutableStateOf("--°") }
-    var weatherText by remember { mutableStateOf("等待输入") }
-    var inputText by remember { mutableStateOf("") }
-
-    val scope = rememberCoroutineScope()
-
-    Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // 输入框
-        OutlinedTextField(
-            value = inputText,
-            onValueChange = { inputText = it },
-            label = { Text("输入城市名称 (如: 北京)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(30.dp))
-
-        // 城市名
-        Text(text = displayCity, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // 温度
-        Text(text = temperature, fontSize = 80.sp, color = Color(0xFF2196F3))
-
-        // 天气描述
-        Text(text = weatherText, fontSize = 24.sp, color = Color.Gray)
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // 查询按钮
-        Button(
-            onClick = {
-                if (inputText.isNotBlank()) {
-                    displayCity = inputText
-                    temperature = "..."
-                    weatherText = "正在获取..."
-
-                    scope.launch {
-                        val result = fetchWeather(inputText)
-                        temperature = result.temp
-                        weatherText = result.weather
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp)
-        ) {
-            Text("立即查询真实天气")
+            WeatherData("N/A", "查询失败")
         }
     }
 }
