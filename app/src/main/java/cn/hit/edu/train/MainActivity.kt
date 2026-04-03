@@ -104,8 +104,19 @@ fun HomeScreen() {
         }
     }
 
+    // 根据天气文本返回对应的 Emoji 图标
+    fun getWeatherIcon(weather: String): String {
+        return when {
+            weather.contains("晴") -> "☀️"
+            weather.contains("云") || weather.contains("阴") -> "☁️"
+            weather.contains("雨") -> "🌧️"
+            weather.contains("雪") -> "❄️"
+            else -> "🌈" // 默认图标
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        CenterAlignedTopAppBar(title = { Text("界面标题", fontSize = 18.sp) })
+        CenterAlignedTopAppBar(title = { Text("欢迎光~~~临", fontSize = 18.sp) })
 
         Column(modifier = Modifier.padding(16.dp)) {
 
@@ -169,11 +180,17 @@ fun HomeScreen() {
                 elevation = CardDefaults.cardElevation(4.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("展示面板", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     Spacer(modifier = Modifier.height(20.dp))
+                    // ... 在 HomeScreen 内部的展示面板 Card 中
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(60.dp).background(Color(0xFFE3F2FD), RoundedCornerShape(30.dp)), contentAlignment = Alignment.Center) {
-                            Text("☀️", fontSize = 30.sp)
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .background(Color(0xFFE3F2FD), RoundedCornerShape(30.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // ✨ 修改这里：动态获取图标
+                            Text(text = getWeatherIcon(weatherText), fontSize = 30.sp)
                         }
                         Spacer(modifier = Modifier.width(20.dp))
                         Column {
@@ -191,7 +208,7 @@ fun HomeScreen() {
 @Composable
 fun ProfileScreen() {
     Column(modifier = Modifier.fillMaxSize()) {
-        CenterAlignedTopAppBar(title = { Text("界面标题", fontSize = 18.sp) })
+        CenterAlignedTopAppBar(title = { Text("我的", fontSize = 18.sp) })
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.size(80.dp).background(Color.LightGray, RoundedCornerShape(40.dp)))
