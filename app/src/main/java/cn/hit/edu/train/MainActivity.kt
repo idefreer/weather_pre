@@ -20,14 +20,49 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.hit.edu.train.ui.theme.TrainTheme
-import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
+// [Retrofit 改动] 导入 Retrofit 相关包，删除了原来的 OkHttp 和 JsonParser 导入
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
+import retrofit2.http.Query
+
+// [Retrofit 改动] 定义符合 API 结构的实体类，用于自动解析 JSON
+data class WeatherResponse(val now: Now)
+data class Now(val temp: String, val text: String)
+data class GeoResponse(val location: List<LocationItem>?)
+data class LocationItem(val id: String)
 
 data class WeatherData(val temp: String, val weather: String)
+
+// [Retrofit 改动] 定义网络请求接口
+interface QWeatherService {
+    @GET("geo/v2/city/lookup")
+    suspend fun getCityId(
+        @Query("location") cityName: String,
+        @Query("key") key: String
+    ): GeoResponse
+
+    @GET("v7/weather/now")
+    suspend fun getWeather(
+        @Query("location") locationId: String,
+        @Query("key") key: String
+    ): WeatherResponse
+}
+
+// [Retrofit 改动] 创建单例客户端
+object RetrofitClient {
+    private const val BASE_URL = "https://kj3jph2h68.re.qweatherapi.com/"
+    val service: QWeatherService by lazy {
+        Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(QWeatherService::class.java)
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,9 +107,6 @@ fun MainContainer() {
     }
 }
 
-/**
- * 首页：支持最近 5 个城市历史记录的下拉搜索框
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen() {
@@ -83,11 +115,9 @@ fun HomeScreen() {
     var weatherText by remember { mutableStateOf("等待查询") }
     var inputText by remember { mutableStateOf("") }
 
-    // 存储最近 5 个城市的列表
     var historyCities by remember { mutableStateOf(listOf("北京", "上海", "哈尔滨")) }
-    var isExpanded by remember { mutableStateOf(false) } // 控制下拉菜单展开状态
+    var isExpanded by remember { mutableStateOf(false) }
 
-    // 抽取查询逻辑：搜索并更新历史记录
     val performSearch: (String) -> Unit = { city ->
         if (city.isNotBlank()) {
             scope.launch {
@@ -95,7 +125,6 @@ fun HomeScreen() {
                 temperature = result.temp
                 weatherText = result.weather
 
-                // 更新历史记录逻辑：去重 -> 置顶 -> 截取前5个
                 val newList = (listOf(city) + historyCities)
                     .distinct()
                     .take(5)
@@ -104,14 +133,13 @@ fun HomeScreen() {
         }
     }
 
-    // 根据天气文本返回对应的 Emoji 图标
     fun getWeatherIcon(weather: String): String {
         return when {
             weather.contains("晴") -> "☀️"
             weather.contains("云") || weather.contains("阴") -> "☁️"
             weather.contains("雨") -> "🌧️"
             weather.contains("雪") -> "❄️"
-            else -> "🌈" // 默认图标
+            else -> "🌈"
         }
     }
 
@@ -120,7 +148,6 @@ fun HomeScreen() {
 
         Column(modifier = Modifier.padding(16.dp)) {
 
-            // 搜索框
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it },
@@ -136,7 +163,6 @@ fun HomeScreen() {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 最近城市下拉框
             ExposedDropdownMenuBox(
                 expanded = isExpanded,
                 onExpandedChange = { isExpanded = !isExpanded },
@@ -160,7 +186,7 @@ fun HomeScreen() {
                             onClick = {
                                 inputText = city
                                 isExpanded = false
-                                performSearch(city) // 点击历史城市直接查询
+                                performSearch(city)
                             }
                         )
                     }
@@ -172,7 +198,6 @@ fun HomeScreen() {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 展示面板
             Card(
                 modifier = Modifier.fillMaxWidth().height(180.dp),
                 shape = RoundedCornerShape(12.dp),
@@ -181,7 +206,6 @@ fun HomeScreen() {
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Spacer(modifier = Modifier.height(20.dp))
-                    // ... 在 HomeScreen 内部的展示面板 Card 中
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
@@ -189,7 +213,6 @@ fun HomeScreen() {
                                 .background(Color(0xFFE3F2FD), RoundedCornerShape(30.dp)),
                             contentAlignment = Alignment.Center
                         ) {
-                            // ✨ 修改这里：动态获取图标
                             Text(text = getWeatherIcon(weatherText), fontSize = 30.sp)
                         }
                         Spacer(modifier = Modifier.width(20.dp))
@@ -225,26 +248,22 @@ fun ProfileScreen() {
     }
 }
 
+// [Retrofit 改动] 重构后的联网函数，逻辑变得非常简洁
 suspend fun fetchWeather(cityName: String): WeatherData {
     return withContext(Dispatchers.IO) {
-        val client = OkHttpClient()
         val myKey = "560260b1f1064e5b9b57c96af147f85d"
-        val my_token = "kj3jph2h68.re.qweatherapi.com"
-
         try {
-            val encodedCity = java.net.URLEncoder.encode(cityName, "UTF-8")
-            val geoUrl = "https://$my_token/geo/v2/city/lookup?location=$encodedCity&key=$myKey"
-            val geoResponse = client.newCall(Request.Builder().url(geoUrl).build()).execute().body?.string() ?: ""
+            // 1. 调用接口获取城市 ID
+            val geoResponse = RetrofitClient.service.getCityId(cityName, myKey)
+            val locationId = geoResponse.location?.get(0)?.id ?: return@withContext WeatherData("N/A", "未找到城市")
 
-            val geoJson = JsonParser.parseString(geoResponse).asJsonObject
-            val locationId = geoJson.getAsJsonArray("location").get(0).asJsonObject.get("id").asString
+            // 2. 调用接口获取天气
+            val weatherResponse = RetrofitClient.service.getWeather(locationId, myKey)
 
-            val weatherUrl = "https://$my_token/v7/weather/now?location=$locationId&key=$myKey"
-            val weatherResponse = client.newCall(Request.Builder().url(weatherUrl).build()).execute().body?.string() ?: ""
-            val now = JsonParser.parseString(weatherResponse).asJsonObject.getAsJsonObject("now")
-
-            WeatherData(now.get("temp").asString + "°C", now.get("text").asString)
+            // 3. 直接从对象中读取属性，无需手动解析 JSON 字符串
+            WeatherData(weatherResponse.now.temp + "°C", weatherResponse.now.text)
         } catch (e: Exception) {
+            e.printStackTrace()
             WeatherData("N/A", "查询失败")
         }
     }
